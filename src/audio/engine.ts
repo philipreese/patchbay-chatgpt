@@ -66,7 +66,7 @@ type Graph = {
   voices: Voice[];
   dispose: () => void;
 };
-type SequencerClock = { moduleId: string; time: number; index: number };
+type SequencerClock = { moduleId: string; time: number; index: number; cycle: number };
 
 function param(module: PatchModule, id: string): number {
   const spec = MODULE_SPECS[module.type].params.find(item => item.id === id);
@@ -111,6 +111,27 @@ export function encodeWav(channels: Float32Array[], sampleRate: number): Blob {
     offset += 2;
   }
   return new Blob([bytes], { type: 'audio/wav' });
+}
+
+/** Repeatable phrase evolution: the written steps remain the source, and 0 means exactly as written. */
+export function evolveStep(note: number, velocity: number, amount: number, cycle: number, index: number, seed: string): { note: number; velocity: number } {
+  const depth = finiteClamp(amount, 0, 1, 0);
+  if (cycle <= 0 || depth === 0) return { note, velocity };
+  let hash = 2166136261 >>> 0;
+  for (const char of `${seed}:${cycle}:${index}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  const random = (salt: number) => {
+    let value = (hash ^ salt) >>> 0;
+    value ^= value >>> 16; value = Math.imul(value, 0x7feb352d); value ^= value >>> 15;
+    value = Math.imul(value, 0x846ca68b); value ^= value >>> 16;
+    return (value >>> 0) / 4294967296;
+  };
+  const intervals = [-12, -7, -5, 5, 7, 12];
+  const offset = random(19) < depth * 0.7 ? intervals[Math.floor(random(37) * intervals.length)] : 0;
+  const variation = (random(53) * 2 - 1) * depth * 0.22;
+  return {
+    note: Math.round(finiteClamp(note + offset, 0, 127, 60)),
+    velocity: finiteClamp(velocity * (1 + variation), 0.1, 1, 0.8),
+  };
 }
 
 export class AudioEngine {
@@ -412,6 +433,7 @@ export class AudioEngine {
     switch (module.type) {
       case 'oscillator': {
         const osc = add(ctx.createOscillator()), level = add(ctx.createGain());
+        let releaseAt: number | null = null;
         osc.type = option(module, 'waveform', 'sawtooth');
         // A note cable supplies pitch; an unpatched oscillator can run at middle C as a drone.
         const baseNote = pitched ? note : 60;
@@ -424,19 +446,44 @@ export class AudioEngine {
           osc.type = option(next, 'waveform', 'sawtooth');
           ramp(osc.frequency, Math.min(ctx.sampleRate * 0.45, midiFrequency(baseNote) * 2 ** param(next, 'octave')), now);
           ramp(osc.detune, param(next, 'detune'), now);
-          ramp(level.gain, gated ? param(next, 'level') * velocity * 0.65 : 0, now);
+          if (releaseAt !== null && releaseAt <= now) {
+            level.gain.cancelScheduledValues(now);
+            level.gain.setTargetAtTime(0, now, 0.007);
+          } else {
+            ramp(level.gain, gated ? param(next, 'level') * velocity * 0.65 : 0, now);
+            if (releaseAt !== null) level.gain.setTargetAtTime(0, releaseAt, 0.007);
+          }
         };
-        result.release = at => { level.gain.cancelScheduledValues(at); level.gain.setTargetAtTime(0, at, 0.007); };
+        result.release = at => {
+          releaseAt = Math.max(at, ctx.currentTime);
+          try { level.gain.cancelAndHoldAtTime(releaseAt); }
+          catch { level.gain.cancelScheduledValues(releaseAt); }
+          level.gain.setTargetAtTime(0, releaseAt, 0.007);
+        };
         osc.start(time); sources.push(osc);
         break;
       }
       case 'noise': {
         const src = add(ctx.createBufferSource()), level = add(ctx.createGain());
+        let releaseAt: number | null = null;
         src.buffer = this.noise; src.loop = true;
         level.gain.value = param(module, 'level') * 0.18 * velocity;
         src.connect(level); outputs.audio = level;
-        result.update = (next, now) => ramp(level.gain, param(next, 'level') * 0.18 * velocity, now);
-        result.release = at => { level.gain.cancelScheduledValues(at); level.gain.setTargetAtTime(0, at, 0.007); };
+        result.update = (next, now) => {
+          if (releaseAt !== null && releaseAt <= now) {
+            level.gain.cancelScheduledValues(now);
+            level.gain.setTargetAtTime(0, now, 0.007);
+          } else {
+            ramp(level.gain, param(next, 'level') * 0.18 * velocity, now);
+            if (releaseAt !== null) level.gain.setTargetAtTime(0, releaseAt, 0.007);
+          }
+        };
+        result.release = at => {
+          releaseAt = Math.max(at, ctx.currentTime);
+          try { level.gain.cancelAndHoldAtTime(releaseAt); }
+          catch { level.gain.cancelScheduledValues(releaseAt); }
+          level.gain.setTargetAtTime(0, releaseAt, 0.007);
+        };
         src.start(time); sources.push(src);
         break;
       }
@@ -452,9 +499,14 @@ export class AudioEngine {
         const constant = add(ctx.createConstantSource()), shape = add(ctx.createGain());
         constant.offset.value = 1; shape.gain.value = 0;
         constant.connect(shape); outputs.cv = shape;
+        const attack = param(module, 'attack'), decay = param(module, 'decay');
+        const sustain = param(module, 'sustain'), decayTau = Math.max(0.005, decay / 3);
+        const valueAt = (at: number) => {
+          if (!gated || at < time) return 0;
+          const age = elapsed + at - time;
+          return age < attack ? age / attack : sustain + (1 - sustain) * Math.exp(-(age - attack) / decayTau);
+        };
         if (gated) {
-          const attack = param(module, 'attack'), decay = param(module, 'decay');
-          const sustain = param(module, 'sustain'), decayTau = Math.max(0.005, decay / 3);
           if (elapsed < attack) {
             shape.gain.setValueAtTime(elapsed / attack, time);
             shape.gain.linearRampToValueAtTime(1, time + attack - elapsed);
@@ -465,8 +517,36 @@ export class AudioEngine {
           }
         }
         result.release = at => {
-          shape.gain.cancelScheduledValues(at);
-          shape.gain.setTargetAtTime(0, at, Math.max(0.005, param(this.graph?.patch.modules.find(item => item.id === module.id) ?? module, 'release') / 4));
+          const releaseAt = Math.max(at, ctx.currentTime);
+          const attackEnd = time + attack - elapsed;
+          if (releaseAt < attackEnd) {
+            // Some implementations retain a future attack endpoint when asked
+            // to hold an in-progress ramp. Rebuild its truncated segment.
+            const now = ctx.currentTime, start = Math.max(now, time);
+            shape.gain.cancelScheduledValues(now);
+            shape.gain.setValueAtTime(valueAt(start), start);
+            if (releaseAt > start) shape.gain.linearRampToValueAtTime(valueAt(releaseAt), releaseAt);
+          } else try {
+            shape.gain.cancelAndHoldAtTime(releaseAt);
+          } catch {
+            // Some Web Audio implementations omit cancelAndHoldAtTime. Restore
+            // the attack/decay segment after cancelling its future endpoint.
+            const now = ctx.currentTime;
+            shape.gain.cancelScheduledValues(now);
+            shape.gain.setValueAtTime(valueAt(now), now);
+            if (releaseAt > now) {
+              if (attackEnd > now && attackEnd < releaseAt) {
+                shape.gain.linearRampToValueAtTime(1, attackEnd);
+                shape.gain.setTargetAtTime(sustain, attackEnd, decayTau);
+              } else if (releaseAt <= attackEnd) {
+                shape.gain.linearRampToValueAtTime(valueAt(releaseAt), releaseAt);
+              } else {
+                shape.gain.setTargetAtTime(sustain, now, decayTau);
+              }
+              shape.gain.setValueAtTime(valueAt(releaseAt), releaseAt);
+            }
+          }
+          shape.gain.setTargetAtTime(0, releaseAt, Math.max(0.005, param(this.graph?.patch.modules.find(item => item.id === module.id) ?? module, 'release') / 4));
         };
         result.update = () => {};
         constant.start(time); sources.push(constant);
@@ -645,7 +725,7 @@ export class AudioEngine {
 
   private reseedClocks(): void {
     if (!this.ctx || !this.graph) return;
-    this.clocks = this.graph.patch.modules.filter(module => module.type === 'sequencer').map(module => ({ moduleId: module.id, time: this.ctx!.currentTime + 0.035, index: 0 }));
+    this.clocks = this.graph.patch.modules.filter(module => module.type === 'sequencer').map(module => ({ moduleId: module.id, time: this.ctx!.currentTime + 0.035, index: 0, cycle: 0 }));
     this.currentStep = -1; this.pendingSteps = [];
   }
 
@@ -660,15 +740,20 @@ export class AudioEngine {
       if (clock.time < now - 0.05) {
         const missed = Math.ceil((now - 0.05 - clock.time) / stepLength);
         clock.time += missed * stepLength;
+        clock.cycle += Math.floor((clock.index + missed) / 16);
         clock.index = (clock.index + missed) % 16;
       }
       let count = 0;
       while (clock.time < now + 0.12 && count++ < 12) {
         const step = patch.steps[clock.index % Math.max(1, patch.steps.length)];
         const duration = 60 / finiteClamp(patch.tempo, 30, 300, 120) / param(seq, 'rate');
-        if (step?.active) this.trigger(`sequencer:${clock.moduleId}`, Math.round(finiteClamp(step.note, 0, 127, 60)), finiteClamp(step.velocity, 0, 1, 0.8), clock.time, clock.time + duration * param(seq, 'gate'));
+        if (step?.active) {
+          const played = evolveStep(step.note, step.velocity, param(seq, 'evolve'), clock.cycle, clock.index, `${patch.id}:${clock.moduleId}`);
+          this.trigger(`sequencer:${clock.moduleId}`, played.note, played.velocity, clock.time, clock.time + duration * param(seq, 'gate'));
+        }
         this.pendingSteps.push({ index: clock.index % 16, time: clock.time });
         clock.time += duration; clock.index = (clock.index + 1) % 16;
+        if (clock.index === 0) clock.cycle++;
       }
     }
     for (const voice of [...graph.voices]) if (voice.expiresAt <= now) voice.stop();

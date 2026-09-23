@@ -1,0 +1,99 @@
+2026-09-23T05:28:22Z
+{"node":"v24.19.0","platform":"linux","arch":"x64"}
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+
+added 168 packages in 3s
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> patchbay@1.0.0 build
+> tsc -b && vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 1595 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                 0.69 kB │ gzip:   0.42 kB
+dist/assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2       18.23 kB
+dist/assets/instrument-serif-latin-400-normal-BVbkICAY.woff    18.34 kB
+dist/assets/instrument-serif-latin-400-italic-u__WvvIK.woff    19.26 kB
+dist/assets/instrument-serif-latin-400-normal-DnYpCC2O.woff2   21.03 kB
+dist/assets/instrument-serif-latin-400-italic-DKMiL14s.woff2   22.13 kB
+dist/assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2           36.93 kB
+dist/assets/index-CKt-xkCr.css                                 38.17 kB │ gzip:   9.03 kB
+dist/assets/index-v9uW_wpM.js                                 332.86 kB │ gzip: 104.15 kB
+✓ built in 1.71s
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> patchbay@1.0.0 test
+> vitest run
+
+
+ RUN  v3.2.7 /workspace/scratch/9ee6462ed392/patchbay-chatgpt
+
+ ✓ src/audio/engine.test.ts (5 tests) 14ms
+ ✓ tests/presets.test.ts (4 tests) 62ms
+ ✓ tests/storage.test.ts (7 tests) 46ms
+ ✓ tests/performance.test.tsx (5 tests) 373ms
+ ✓ tests/canvas.test.tsx (4 tests) 845ms
+ ✓ tests/app.test.tsx (4 tests) 884ms
+   ✓ Patchbay app flows > renders the initial preset and lets the user change Color, save a named copy, and reload it  575ms
+stdout | src/audio/native.test.ts > native rendered audio graph > renders sequenced bass, cuts output cable, supports 8 pad voices and panics to silence
+Native rendered audio RMS/peak: {"bass":{"rms":0.0704567577234304,"peak":0.12157497555017471},"unplugged":{"rms":0,"peak":0},"pad":{"rms":0.06459600015667719,"peak":0.16546744108200073},"shaped":{"rms":0.014963854933389033,"peak":0.025133248418569565},"unshaped":{"rms":0.2502289661859436,"peak":0.34037160873413086},"panic":{"rms":0,"peak":0}}
+
+stdout | src/audio/native.test.ts > native rendered audio graph > records the rendered master into a decodable nonzero WAV fallback
+Native recorded WAV: {"bytes":147500,"seconds":0.768,"rms":0.03414090043183597}
+
+stdout | src/audio/native.test.ts > native rendered audio graph > renders every preset and keeps a real bounded effect tail until panic
+Native preset/effect RMS: {"presets":{"after-hours":0.06986589862773632,"velvet-sky":0.013858427749162391,"neon-thread":0.048291862703439936,"drift":0.009670906133273994},"effectTail":0.010643610676117524,"panic":0}
+
+stdout | src/audio/native.test.ts > native rendered audio graph > ramps a live filter cutoff and changes rendered output energy
+Native filter response: {"lowCutoffRms":0.029293110551966435,"highCutoffRms":0.1999299737653887}
+
+stdout | src/audio/native.test.ts > native rendered audio graph > preserves a short gate during a long envelope attack and releases smoothly
+Native short-gate envelope peaks: {"attack":0.07289062440395355,"release":0.11012841016054153,"ending":0.004489077255129814,"attackMaster":0.005004371485057474,"releaseMaster":0.013423963755517692,"endingMaster":0.0005552154827819688}
+
+stdout | src/audio/native.test.ts > native rendered audio graph > preserves a short gate during a long envelope attack and releases smoothly
+Native held-gate release peaks: {"held":0.8826805353164673,"heldEnding":0.00368207017891109}
+
+stdout | src/audio/native.test.ts > native rendered audio graph > keeps a source released across a same-wiring parameter edit
+Native released-source edit RMS: {"sounding":0.1091180499205918,"afterEdit":2.865096334540474e-8}
+
+ ✓ src/audio/native.test.ts (6 tests) 7252ms
+   ✓ native rendered audio graph > renders sequenced bass, cuts output cable, supports 8 pad voices and panics to silence  2744ms
+   ✓ native rendered audio graph > records the rendered master into a decodable nonzero WAV fallback  874ms
+   ✓ native rendered audio graph > renders every preset and keeps a real bounded effect tail until panic  2347ms
+   ✓ native rendered audio graph > ramps a live filter cutoff and changes rendered output energy  387ms
+   ✓ native rendered audio graph > preserves a short gate during a long envelope attack and releases smoothly  670ms
+
+ Test Files  7 passed (7)
+      Tests  35 passed (35)
+   Start at  00:28:30
+   Duration  7.67s (transform 684ms, setup 0ms, collect 1.59s, tests 9.48s, environment 1.84s, prepare 536ms)
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> patchbay@1.0.0 check:production
+> node scripts/check-production.mjs
+
+{
+  "check": "production HTTP at actual repository subpath",
+  "passed": true,
+  "path": "/patchbay-chatgpt/",
+  "assets": [
+    "/patchbay-chatgpt/",
+    "/patchbay-chatgpt/favicon.svg",
+    "/patchbay-chatgpt/assets/index-v9uW_wpM.js",
+    "/patchbay-chatgpt/assets/index-CKt-xkCr.css",
+    "/patchbay-chatgpt/assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2",
+    "/patchbay-chatgpt/assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2",
+    "/patchbay-chatgpt/assets/instrument-serif-latin-400-normal-DnYpCC2O.woff2",
+    "/patchbay-chatgpt/assets/instrument-serif-latin-400-normal-BVbkICAY.woff",
+    "/patchbay-chatgpt/assets/instrument-serif-latin-400-italic-DKMiL14s.woff2",
+    "/patchbay-chatgpt/assets/instrument-serif-latin-400-italic-u__WvvIK.woff"
+  ],
+  "verificationRoute": 200,
+  "browserTest": false
+}
+2026-09-23T05:28:38Z

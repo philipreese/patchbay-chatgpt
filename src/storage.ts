@@ -282,7 +282,7 @@ export function readSharedPatch(hash?: string): Patch | null {
   if (!fragment) return null;
   const params = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
   const encoded = params.get('patch');
-  if (!encoded) return null;
+  if (encoded === null) return null;
   return decodePatch(encoded);
 }
 

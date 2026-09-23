@@ -56,7 +56,10 @@ export async function runAudioVerification(
       }),
       cables: PRESETS[1].cables.filter(cable =>
         ['keys-note-osc-note', 'keys-gate-env-gate', 'env-cv-amp-gain', 'amp-audio-out-audio'].includes(cable.id))
-        .concat([{ id: 'osc-audio-amp-audio', from: 'osc', fromPort: 'audio', to: 'amp', toPort: 'audio' }]),
+        .concat([
+          { id: 'osc-audio-amp-audio', from: 'osc', fromPort: 'audio', to: 'amp', toPort: 'audio' },
+          { id: 'amp-audio-out-audio', from: 'amp', fromPort: 'audio', to: 'out', toPort: 'audio' },
+        ]),
     };
     engine.panic();
     await engine.start(cvPatch);
@@ -95,7 +98,7 @@ export async function runAudioVerification(
         decodedSeconds = audio.duration;
       } finally { await decoder.close(); }
     } catch { /* Report decode failure rather than claiming the blob is verified. */ }
-    publish({ check: 'Downloaded recording decodes with nonzero sound',
+    publish({ check: 'Recorded audio blob decodes with nonzero sound',
       passed: recording.blob.size > 512 && decodedSeconds > 0.3 && recordedRms > 0.0001,
       measured: `${recording.extension}, ${recording.blob.size} bytes, ${decodedSeconds.toFixed(2)} s, decoded RMS ${recordedRms.toFixed(5)}` });
 

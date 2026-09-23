@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encodeWav, finiteClamp, midiFrequency, planRoutes } from './engine';
+import { encodeWav, evolveStep, finiteClamp, midiFrequency, planRoutes } from './engine';
 import type { Cable, Patch, PatchModule } from '../types';
 
 const modules: PatchModule[] = [
@@ -47,6 +47,15 @@ describe('numerical audio helpers', () => {
     expect(midiFrequency(69)).toBe(440);
     expect(midiFrequency(81)).toBe(880);
     expect(finiteClamp(Infinity, 0, 1, 0.4)).toBe(0.4);
+  });
+
+  it('keeps edited steps exact at zero evolution and varies later cycles reproducibly', () => {
+    expect(evolveStep(60, 0.7, 0, 9, 4, 'seed')).toEqual({ note: 60, velocity: 0.7 });
+    expect(evolveStep(60, 0.7, 1, 0, 4, 'seed')).toEqual({ note: 60, velocity: 0.7 });
+    const phrases = Array.from({ length: 4 }, (_, cycle) => Array.from({ length: 16 }, (_, index) => evolveStep(60, 0.7, 0.8, cycle + 1, index, 'seed')));
+    expect(phrases).toEqual(Array.from({ length: 4 }, (_, cycle) => Array.from({ length: 16 }, (_, index) => evolveStep(60, 0.7, 0.8, cycle + 1, index, 'seed'))));
+    expect(new Set(phrases.flat().map(step => step.note)).size).toBeGreaterThan(1);
+    expect(phrases.flat().every(step => step.note >= 48 && step.note <= 72 && step.velocity > 0 && step.velocity <= 1)).toBe(true);
   });
 
   it('writes a playable PCM WAV with correctly saturated sample values', async () => {
