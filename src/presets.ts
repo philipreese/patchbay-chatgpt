@@ -8,7 +8,7 @@ const baseModules = (kind:Patch['category']):PatchModule[] => {
  const isPad=kind==='pad', isAmbient=kind==='ambient', isLead=kind==='lead';
  return [
   module('keys','keyboard',30,35),
-  ...(!isPad && !isLead ? [module('seq','sequencer',30,230,{rate:isAmbient?1:4,gate:isAmbient?.9:.54})]:[]),
+  ...(!isPad && !isLead ? [module('seq','sequencer',30,230,{rate:isAmbient?1:4,gate:isAmbient?.9:.54,evolve:isAmbient?.55:0})]:[]),
   module('osc','oscillator',300,35,{waveform:isPad?'sawtooth':isAmbient?'sine':isLead?'sawtooth':'square',level:isPad?.19:isAmbient?.3:.27,detune:isPad?-7:0}),
   ...(isPad?[module('osc2','oscillator',300,440,{waveform:'triangle',level:.25,detune:7}),module('mix','mixer',565,420,{a:.65,b:.6})]:[]),
   module('env','envelope',565,35,{attack:isPad?.65:isAmbient?1.2:.008,decay:isAmbient?1.5:.24,sustain:isPad?.8:isAmbient?.6:isLead?.65:.25,release:isPad?2.4:isAmbient?4:isLead?.45:.12}),
@@ -26,13 +26,13 @@ const build = (id:string,name:string,description:string,category:Patch['category
  if(category==='bass'||ambient)cables.push(cable('seq','note','osc','note'),cable('seq','gate','env','gate'));
  if(pad){cables.splice(cables.findIndex(c=>c.from==='osc'&&c.to==='filter'),1);cables.push(cable('keys','note','osc2','note'),cable('osc','audio','mix','a'),cable('osc2','audio','mix','b'),wire('mix','filter'));}
  return {version:1,id,name,description,category,tempo,master:.36,modules:baseModules(category),cables,steps:Array.from({length:16},(_,i)=>({note:notes[i%notes.length],active:active.includes(i),velocity:i%4===0?.85:.65})),macros:[
-  macro('brightness','Color','From velvet to electric',.4,[{moduleId:'filter',param:'cutoff',min:140,max:10000,curve:'exp'}]),
-  macro('shape',pad||ambient?'Bloom':'Bite',pad||ambient?'Let every note unfold':'Soft edges, sharp attitude',.3,pad||ambient?[{moduleId:'env',param:'attack',min:.02,max:2.4},{moduleId:'env',param:'release',min:.3,max:5}]:[{moduleId:'filter',param:'resonance',min:.5,max:12},{moduleId:'env',param:'decay',min:.08,max:.85}]),
+  macro('brightness','Color','From velvet to electric',pad?.57:ambient?.62:category==='lead'?.69:.42,[{moduleId:'filter',param:'cutoff',min:140,max:10000,curve:'exp'}]),
+  macro('shape',pad||ambient?'Bloom':'Bite',pad||ambient?'Let every note unfold':'Soft edges, sharp attitude',pad?.28:ambient?.5:.3,pad||ambient?[{moduleId:'env',param:'attack',min:.02,max:2.4},{moduleId:'env',param:'release',min:.3,max:5}]:[{moduleId:'filter',param:'resonance',min:.5,max:12},{moduleId:'env',param:'decay',min:.08,max:.85}]),
   macro('motion','Motion','A little movement goes a long way',.25,[{moduleId:'lfo',param:'depth',min:0,max:category==='lead'?.15:.7},{moduleId:'lfo',param:'rate',min:category==='lead'?3:.05,max:category==='lead'?8:2,curve:'exp'}]),
   macro('space','Space','Intimate room to infinite sky',ambient?.7:pad?.55:.2,[{moduleId:'reverb',param:'mix',min:0,max:.7},{moduleId:'delay',param:'mix',min:0,max:.45}]),
  ]};
 };
-export const PRESETS: Patch[] = [
+const RAW_PRESETS: Patch[] = [
  build('after-hours','After hours','A warm, elastic bassline. Give it a little bite.', 'bass',108,[36,36,43,36,36,46,43,36,36,48,43,46,36,43,34,36],[0,2,3,6,8,10,11,14]),
  build('velvet-sky','Velvet sky','Slow waves of color. Hold a chord and let it bloom.', 'pad',76,[60,64,67,71],[0,4,8,12]),
  build('neon-thread','Neon thread','A bright voice with a little wander in its step.', 'lead',112,[60,62,64,67],[0,2,4,6,8,10,12,14]),
@@ -45,3 +45,6 @@ export function applyMacro(patch:Patch,id:string,value:number):Patch {
  return {...patch,macros:patch.macros.map(m=>m.id===id?{...m,value:v}:m),modules:patch.modules.map(m=>{const mappings=found.mappings.filter(x=>x.moduleId===m.id);if(!mappings.length)return m; const params={...m.params};mappings.forEach(x=>{params[x.param]=x.curve==='exp'?x.min*Math.pow(x.max/x.min,v):x.min+(x.max-x.min)*v;});return {...m,params};})};
 }
 export const noteName=(midi:number)=>`${['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][((midi%12)+12)%12]}${Math.floor(midi/12)-1}`;
+
+// Macros and sound start in the same position; the first gesture never jumps to a hidden value.
+export const PRESETS: Patch[] = RAW_PRESETS.map(p => p.macros.reduce((patch, macro) => applyMacro(patch, macro.id, macro.value), p));

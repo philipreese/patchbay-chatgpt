@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent, WheelEvent } from 'react';
 import { Focus, Grip, Minus, Plus, Trash2, X } from 'lucide-react';
-import { MODULE_SPECS, MODULE_TYPES, canConnect, createModule } from '../modules';
+import { MODULE_SPECS, canConnect, createModule } from '../modules';
 import type { Cable, ModuleType, ParamSpec, Patch, PatchModule, Port, SignalType } from '../types';
 import './PatchCanvas.css';
 
@@ -23,8 +23,9 @@ const NODE_WIDTH = 220;
 const HEADER_HEIGHT = 62;
 const PORT_PADDING = 8;
 const PORT_ROW = 30;
-const MIN_ZOOM = 0.4;
+const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 1.7;
+const clampCoordinate = (value: number) => Math.max(-100000, Math.min(100000, Math.round(value)));
 const SIGNAL_COLORS: Record<SignalType, string> = {
   audio: '#d6ef8b', cv: '#c4b4ed', note: '#aabdf5', gate: '#f19b78',
 };
@@ -156,6 +157,7 @@ export function PatchCanvas({ patch, selectedId, onSelect, onChange, onMessage }
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     gesture.current = { kind: 'pan', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, origin: viewRef.current };
+    setAddOpen(false);
   }
 
   function startDrag(event: PointerEvent<HTMLElement>, module: PatchModule) {
@@ -198,8 +200,8 @@ export function PatchCanvas({ patch, selectedId, onSelect, onChange, onMessage }
     if (action.kind === 'pan') {
       updateView({ ...action.origin, x: action.origin.x + event.clientX - action.startX, y: action.origin.y + event.clientY - action.startY });
     } else {
-      const x = Math.round(action.originX + (event.clientX - action.startX) / viewRef.current.zoom);
-      const y = Math.round(action.originY + (event.clientY - action.startY) / viewRef.current.zoom);
+      const x = clampCoordinate(action.originX + (event.clientX - action.startX) / viewRef.current.zoom);
+      const y = clampCoordinate(action.originY + (event.clientY - action.startY) / viewRef.current.zoom);
       if (Math.hypot(event.clientX - action.startX, event.clientY - action.startY) > 3) action.moved = true;
       const next = { ...positionsRef.current, [action.moduleId]: { x, y } };
       positionsRef.current = next;
@@ -226,11 +228,16 @@ export function PatchCanvas({ patch, selectedId, onSelect, onChange, onMessage }
   }
 
   function addModule(type: ModuleType) {
+    if (patch.modules.length >= 64) {
+      setAddOpen(false);
+      onMessage('A patch can hold up to 64 modules. Remove one to make room.');
+      return;
+    }
     const rect = viewport.current?.getBoundingClientRect();
     const current = viewRef.current;
     const offset = patch.modules.length % 4 * 28;
-    const x = Math.round(((rect?.width ?? 900) / 2 - current.x) / current.zoom - NODE_WIDTH / 2 + offset);
-    const y = Math.round(((rect?.height ?? 600) / 2 - current.y) / current.zoom - 90 + offset);
+    const x = clampCoordinate(((rect?.width ?? 900) / 2 - current.x) / current.zoom - NODE_WIDTH / 2 + offset);
+    const y = clampCoordinate(((rect?.height ?? 600) / 2 - current.y) / current.zoom - 90 + offset);
     const module = createModule(type, x, y);
     onChange({ ...patch, modules: [...patch.modules, module] });
     onSelect(module.id);
@@ -242,9 +249,17 @@ export function PatchCanvas({ patch, selectedId, onSelect, onChange, onMessage }
     if (module.type === 'output') return;
     const cablesRemoved = patch.cables.filter(cable => cable.from === module.id || cable.to === module.id).length;
     const modules = patch.modules.filter(item => item.id !== module.id);
-    onChange({ ...patch, modules, cables: patch.cables.filter(cable => cable.from !== module.id && cable.to !== module.id) });
+    onChange({
+      ...patch,
+      modules,
+      cables: patch.cables.filter(cable => cable.from !== module.id && cable.to !== module.id),
+      macros: patch.macros.map(macro => ({ ...macro, mappings: macro.mappings.filter(mapping => mapping.moduleId !== module.id) })),
+    });
     if (pending?.moduleId === module.id) setPending(null);
-    if (selectedId === module.id && modules.length) onSelect(modules[0].id);
+    if (selectedId === module.id) {
+      const fallback = modules.find(item => item.type === 'output') ?? modules.find(item => MODULE_SPECS[item.type].outputs.some(port => port.signal === 'audio'));
+      if (fallback) onSelect(fallback.id);
+    }
     onMessage(`${MODULE_SPECS[module.type].name} removed${cablesRemoved ? ` with ${cablesRemoved} cable${cablesRemoved === 1 ? '' : 's'}` : ''}.`);
   }
 
@@ -283,7 +298,13 @@ export function PatchCanvas({ patch, selectedId, onSelect, onChange, onMessage }
 
   return (
     <section className="pb-canvas" aria-label="Modular patch canvas" onKeyDown={event => {
-      if (event.key === 'Escape') { setPending(null); setAddOpen(false); onMessage('Cable cancelled.'); }
+      if (event.key === 'Escape' && (pending || addOpen)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setPending(null);
+        setAddOpen(false);
+        onMessage(pending ? 'Cable cancelled.' : 'Add module menu closed.');
+      }
     }}>
       <div className="pb-canvas-toolbar">
         <div className="pb-add-wrap">
@@ -341,12 +362,22 @@ export function PatchCanvas({ patch, selectedId, onSelect, onChange, onMessage }
             const spec = MODULE_SPECS[module.type];
             const selected = selectedId === module.id;
             const position = positions[module.id] ?? module;
-            return <article key={module.id} className={`pb-node ${selected ? 'pb-node-selected' : ''}`} style={{ left: position.x, top: position.y, '--module-accent': spec.color } as CSSProperties} aria-label={`${spec.name} module`}>
+            return <article key={module.id} className={`pb-node ${selected ? 'pb-node-selected' : ''}`} style={{ left: position.x, top: position.y, '--module-accent': spec.color } as CSSProperties} aria-label={`${spec.name} module. Arrow keys move it, Enter selects it.`} tabIndex={0} onClick={() => onSelect(module.id)} onKeyDown={event => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(module.id); }
+              const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+              if (directions[event.key]) {
+                event.preventDefault();
+                const [dx, dy] = directions[event.key];
+                const step = event.shiftKey ? 1 : 10;
+                onChange({ ...patch, modules: patch.modules.map(item => item.id === module.id ? { ...item, x: clampCoordinate(item.x + dx * step), y: clampCoordinate(item.y + dy * step) } : item) });
+              }
+            }}>
               <div className="pb-node-heading" onPointerDown={event => startDrag(event, module)}>
                 <span className="pb-node-led" aria-hidden="true" />
                 <div className="pb-node-title"><span>{spec.short}</span><strong>{spec.name}</strong></div>
                 <Grip size={15} className="pb-node-grip" aria-hidden="true" />
-                {module.type !== 'output' && <button type="button" className="pb-node-delete" title={`Remove ${spec.name}`} aria-label={`Remove ${spec.name}`} onPointerDown={event => event.stopPropagation()} onClick={() => removeModule(module)}><Trash2 size={14} /></button>}
+                {module.type !== 'output' && <button type="button" className="pb-node-delete" title={`Remove ${spec.name}`} aria-label={`Remove ${spec.name}`} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); removeModule(module); }}><Trash2 size={14} /></button>}
               </div>
               <div className="pb-node-ports" style={{ height: PORT_PADDING * 2 + PORT_ROW * Math.max(spec.inputs.length, spec.outputs.length, 1) }}>
                 <div className="pb-port-column pb-port-inputs">

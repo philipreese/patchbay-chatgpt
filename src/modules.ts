@@ -70,6 +70,7 @@ export const MODULE_SPECS: Record<ModuleType, ModuleSpec> = {
     params: [
       { id: 'rate', label: 'Rate', min: 1, max: 4, step: 1, default: 4 },
       { id: 'gate', label: 'Gate', min: 0.1, max: 0.95, step: 0.01, default: 0.65 },
+      { id: 'evolve', label: 'Evolution', min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
   keyboard: {

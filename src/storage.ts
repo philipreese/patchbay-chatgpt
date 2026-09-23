@@ -283,11 +283,7 @@ export function readSharedPatch(hash?: string): Patch | null {
   const params = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
   const encoded = params.get('patch');
   if (!encoded) return null;
-  try {
-    return decodePatch(encoded);
-  } catch {
-    return null;
-  }
+  return decodePatch(encoded);
 }
 
 function getStorage(): Storage {

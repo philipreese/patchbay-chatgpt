@@ -105,7 +105,7 @@ describe('patch validation and serialization', () => {
     expect(url.search).toBe('?mode=demo');
     expect(readSharedPatch(url.hash)).toEqual(patch);
     expect(readSharedPatch('#other=value')).toBeNull();
-    expect(readSharedPatch('#patch=not-valid')).toBeNull();
+    expect(() => readSharedPatch('#patch=not-valid')).toThrow(/Invalid encoded patch/);
   });
 });
 
